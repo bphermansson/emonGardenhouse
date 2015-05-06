@@ -10,10 +10,13 @@ Schematic also in source folder.
 
 // DHT11 Humidity/Temp sensor
 #include <dht.h>
-#define dht_dpin A5 //no ; here. Set equal to channel sensor is on
+#define dht_dpin 3 //no ; here. Set equal to channel sensor is on
 dht DHT;
 
 #include <JeeLib.h>   
+#include <avr/sleep.h>
+ISR(WDT_vect) { Sleepy::watchdogEvent(); }  // Attached JeeLib sleep function to Atmega328 watchdog -enables MCU to be put into sleep mode inbetween readings to reduce power consumption 
+
 // For RFM12B
 #define MYNODE 22            // Should be unique on network, node ID 30 reserved for base station
 #define RF_freq RF12_433MHZ     // frequency - match to same frequency as RFM12B module (change to 868Mhz or 915Mhz if appropriate)
@@ -33,7 +36,7 @@ typedef struct {
 } PayloadTX;         // neat way of packaging data for RF comms
 PayloadTX emontx;
 
-typedef struct { int temperature, humidity, power; } PayloadGLCD;
+typedef struct { int temperature, humidity, volt; } PayloadGLCD;
 PayloadGLCD emonglcd;
 //-------------------------------------------------------------------------------------------- 
 // Flow control
@@ -46,7 +49,11 @@ String shour, smin;
 int ihour, imin;
 
 boolean answer;
-double Irms;
+
+// Battery monitor
+int sensorPin = A0;    // select the input pin for the potentiometer
+int sensorValue = 0;  // variable to store the value coming from the sensor
+float volt;
 
 void setup()   {
   Serial.begin(9600);
@@ -55,51 +62,14 @@ void setup()   {
   // Init RF
   delay(500); 				   //wait for power to settle before firing up the RF
   rf12_initialize(MYNODE, RF_freq,group);
-  delay(100);	 
-  //wait for RF to settle before turning on display
-   
-  // Init energy monitor
-  // http://openenergymonitor.org/emon/buildingblocks/ct-and-ac-power-adaptor-installation-and-calibration-theory
-  // http://openenergymonitor.org/emon/buildingblocks/calibration
-  //emon1.current(0, 10);             // Current: input pin, calibration.
-  emon1.current(4, 10);
-   
-  Serial.println("Start lcd");
-  // Start LCD
-  display.begin();
-  delay(500);
-  // you can change the contrast around to adapt the display
-  // for the best viewing!
-  display.setContrast(50);
-
-  display.display(); // show splashscreen
-  delay(2000);
-  display.clearDisplay();   // clears the screen and buffer
-  
-  // Backlight on
-  pinMode(9, OUTPUT);     
-  digitalWrite(9, HIGH);
+  rf12_control(0xC040);                                                 // set low-battery level to 2.2V i.s.o. 3.1V
+  delay(10);
+  rf12_sleep(RF12_SLEEP);
+  //wait for RF to settle   
   
   // DHT11 on
-  pinMode(3, OUTPUT);     
-  digitalWrite(3, HIGH);
-  
-  // draw a single pixel
-  display.drawPixel(10, 10, BLACK);
-  display.display();
-  Serial.println("Dot is there?");
-  delay(2000);
-  display.clearDisplay();
-  
-  display.setTextSize(1);
-  display.setTextColor(BLACK);
-  display.setCursor(0,0);
-  display.println("Hello, world!Are there a line break here?");
-  display.setTextSize(2);
-  display.println("Yes");
-  display.setTextSize(1);
-  display.println("So this was easy!");
-  display.display();
+  //pinMode(3, OUTPUT);     
+  //digitalWrite(3, HIGH);
   
   Serial.println("Com test with base");
   emonglcd.temperature = 0; 
@@ -109,73 +79,54 @@ void setup()   {
   rf12_sendWait(2); 
   
   Serial.println("Done");
-  
   delay(2000);
-  display.clearDisplay();
-  
-  // Larger text as we move on
-  display.setTextSize(3);
-
 }
 void loop() {
     // Send the values to base after the base has sent her message. 
     if (answer){
       delay(500);
       Serial.println("Calling base...");
-      
-      // Get power reading from Current Transformer
-      Irms = emon1.calcIrms(1480);  // Calculate Irms only
-      Serial.print(Irms*230.0);	       // Apparent power
-      Serial.print(" ");
-      Serial.println(Irms);		       // Irms
-      
+          
       // Get temp and humidity from sensor
       emonglcd.temperature = (int) (DHT.temperature*100);                          // set emonglcd payload
       emonglcd.humidity = (int) (DHT.humidity);
-      emonglcd.power = (int) (Irms*230.0);
+      emonglcd.volt = (int) (volt*100);
       //emonglcd.humidity = 38;
-      rf12_sendNow(0, &emonglcd, sizeof emonglcd);                     //send temperature data via RFM12B using new rf12_sendNow wrapper -glynhudson
-      rf12_sendWait(10); 
+      
+      // Send data
+      rf12_sleep(RF12_WAKEUP);
+      // if ready to send + exit loop if it gets stuck as it seems too
+      int i = 0; while (!rf12_canSend() && i<10) {rf12_recvDone(); i++;}
+      rf12_sendStart(0, &emontx, sizeof emontx);
+      // set the sync mode to 2 if the fuses are still the Arduino default
+      // mode 3 (full powerdown) can only be used with 258 CK startup fuses
+      rf12_sendWait(2);
+      rf12_sleep(RF12_SLEEP); 
+      delay(50);
+      
+      //rf12_sendNow(0, &emonglcd, sizeof emonglcd);                     //send temperature data via RFM12B using new rf12_sendNow wrapper -glynhudson
+      //rf12_sendWait(10); 
       answer = false;
       //last_emonbase = millis();
     }
     
+    // Read battery voltage
+    sensorValue = analogRead(sensorPin);
+    volt = sensorValue * (3.32 / 1023.0);
+  
     // Read humidity and temp  
-    DHT.read11(dht_dpin);
+    DHT.read22(dht_dpin);
     
     // Print results on serial port...
-    Serial.print("H = ");
+    Serial.print("Battery = ");
+    Serial.print(volt);
+    Serial.print("V H = ");
     Serial.print(DHT.humidity);
     Serial.print("%  T = ");
     Serial.print(DHT.temperature); 
     Serial.println("C  ");
-    Serial.print("Irms: ");	       // Apparent power
-    Serial.println(Irms*230.0);	       // Apparent power
 
-
-    // ...and on the 5110-display
-    display.setTextColor(BLACK);
-    display.setCursor(0,0);
-    display.setTextSize(2);
-    // Temp
-    display.print(DHT.temperature,1);
-    display.println("C");
-    // Humidity
-    display.setTextSize(2);
-    display.print(DHT.humidity,0);
-    display.println("%");
-    display.display();
-    // Time goes in on the third row. 
-    display.print(shour);
-    display.print(":");
-    display.println(smin);
-    display.display();
-    delay(100);
-      
-    delay(5000);
-    display.clearDisplay();
-
-    
+  delay(5000);    
   // Signal from the emonTx received. Here we collect and format the current time.   
   if (rf12_recvDone())
   {

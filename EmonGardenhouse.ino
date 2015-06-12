@@ -97,20 +97,39 @@ void setup() {
 
 void loop()
 { 
-  
+  // Turn on DHT-sensor
   digitalWrite(7,HIGH); 
   delay(2000);                                     //wait 2s for sensor                                                                // Send the command to get temperatures
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
   
+  // Read values and check for sanity
+  readdht:
   // Read humidity and temp  
   DHT.read22(dht_dpin);
   delay(100);
+
+  if (DHT.temperature < -60 || DHT.temperature > 60 || DHT.humidity < 0 || DHT.humidity > 100) {
+    // The values can't be right, read again
+    Serial.println("Illegal values from sensor, read again");
+    goto readdht;
+  }
+
   digitalWrite(7,LOW);
 
 // Read battery voltage
   sensorValue = analogRead(sensorPin);
   delay(10);
   volt = sensorValue * (3.32 / 1023.0);
+  
+  // Raw values
+  Serial.print ("DHT.temperature = ");
+  Serial.println (DHT.temperature);
+  Serial.print ("DHT.humidity = ");
+  Serial.println (DHT.humidity);
+  Serial.print ("Battery = ");
+  Serial.print (volt);
+  Serial.print (" V, AD = ");
+  Serial.println (sensorValue);
   
   emontx.temp = (int) (DHT.temperature*100);                          // set emonglcd payload
   emontx.humidity = (int) (DHT.humidity);
@@ -119,13 +138,14 @@ void loop()
   delay(10);
   
     // Print results on serial port...
-    Serial.print("Garbage");
+    Serial.println("Garbage");
     Serial.print("Battery = ");
     Serial.print(emontx.battery );
     Serial.print("V H = ");
     Serial.print(DHT.humidity);
-    Serial.print("%  T = ");
-    Serial.print(DHT.temperature); 
+    Serial.println("%");
+    Serial.print("T = ");
+    Serial.print(emontx.temp); 
     Serial.println("C  ");
 
   delay(5);

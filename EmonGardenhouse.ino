@@ -67,10 +67,13 @@ float volt;
 
 typedef struct {
   	  int temp;
-          int humidity;                                  
-	  int battery;		                                      
+      int humidity;                                  
+	    int battery;		                                      
 } Payload;
 Payload emontx;
+
+int oldtemp, oldhumidity, oldbattery;
+boolean firstrun = true;
 
 void setup() {
   Serial.begin(9600);
@@ -97,6 +100,8 @@ void setup() {
 
 void loop()
 { 
+  // Store previous value
+  
   // Turn on DHT-sensor
   digitalWrite(7,HIGH); 
   delay(2000);                                     //wait 2s for sensor                                                                // Send the command to get temperatures
@@ -108,18 +113,43 @@ void loop()
   DHT.read22(dht_dpin);
   delay(100);
 
-  if (DHT.temperature < -60 || DHT.temperature > 60 || DHT.humidity < 0 || DHT.humidity > 100) {
-    // The values can't be right, read again
-    Serial.println("Illegal values from sensor, read again");
-    goto readdht;
-  }
-
-  digitalWrite(7,LOW);
-
-// Read battery voltage
+  // Read battery voltage
   sensorValue = analogRead(sensorPin);
   delay(10);
   volt = sensorValue * (3.32 / 1023.0);
+
+  if (DHT.temperature < -60 || DHT.temperature > 60 || DHT.humidity < 0 || DHT.humidity > 100) {
+    // The values can't be right, read again
+    Serial.println("Illegal values from sensor, read again");
+    delay(2000);
+    goto readdht;
+  }
+
+  // First time entering the loop?
+  if (firstrun == true) {
+    // Dont compare new value to old value the first time (because the oldvalue is always zero)
+    firstrun = false;
+  }
+  else {
+    if (DHT.temperature-oldtemp>6 || oldtemp-DHT.temperature>6) {
+      // The values differs to much
+      Serial.println("Illegal values from sensor, read again");
+      delay(2000);
+      goto readdht;    
+    }
+    if (DHT.humidity-oldhumidity>4 || oldhumidity-DHT.humidity>4) {
+      // The values differs to much
+      Serial.println("Illegal values from sensor, read again");
+      delay(2000);
+      goto readdht;    
+    }
+  }
+  // Save previous reading
+  oldtemp=DHT.temperature;
+  oldhumidity=DHT.humidity;
+  oldbattery=volt;
+  // DHT off
+  digitalWrite(7,LOW);
   
   // Raw values
   Serial.print ("DHT.temperature = ");

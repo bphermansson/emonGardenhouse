@@ -76,7 +76,7 @@ int oldtemp, oldhumidity, oldbattery;
 boolean firstrun = true;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(38400);
   Serial.println("emonTX Low-power humidity example"); 
   Serial.println("OpenEnergyMonitor.org");
   Serial.print("Node: "); 
@@ -120,7 +120,7 @@ void loop()
 
   if (DHT.temperature < -60 || DHT.temperature > 60 || DHT.humidity < 0 || DHT.humidity > 100) {
     // The values can't be right, read again
-    Serial.println("Illegal values from sensor, read again");
+    Serial.println("Illegal values from some sensor, read again");
     delay(2000);
     goto readdht;
   }
@@ -133,13 +133,13 @@ void loop()
   else {
     if (DHT.temperature-oldtemp>6 || oldtemp-DHT.temperature>6) {
       // The values differs to much
-      Serial.println("Illegal values from sensor, read again");
+      Serial.println("Illegal values from temp sensor, read again");
       delay(2000);
       goto readdht;    
     }
     if (DHT.humidity-oldhumidity>4 || oldhumidity-DHT.humidity>4) {
       // The values differs to much
-      Serial.println("Illegal values from sensor, read again");
+      Serial.println("Illegal values from humidity sensor, read again");
       delay(2000);
       goto readdht;    
     }
@@ -161,7 +161,7 @@ void loop()
   Serial.print (" V, AD = ");
   Serial.println (sensorValue);
   
-  emontx.temp = (int) (DHT.temperature*100);                          // set emonglcd payload
+  emontx.temp = (int) (DHT.temperature*10);                          // set emonglcd payload
   emontx.humidity = (int) (DHT.humidity);
   emontx.battery = (int) (volt*100);
   
